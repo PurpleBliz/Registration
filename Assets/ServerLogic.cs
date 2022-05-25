@@ -1,13 +1,20 @@
 using System;
+using System.Collections;
 using System.Text;
 using ExitGames.Client.Photon;
 using UnityEngine;
 using Photon.Pun;
 using Photon.Realtime;
+using UnityEngine.UI;
 
 public class ServerLogic : MonoBehaviourPunCallbacks, IOnEventCallback
 {
     public bool IsGame;
+
+    public InputField Name;
+    public InputField Company;
+    public InputField Email;
+    public Button start;
     
     private const byte eventID = 42;
 
@@ -49,18 +56,28 @@ public class ServerLogic : MonoBehaviourPunCallbacks, IOnEventCallback
         PhotonNetwork.AddCallbackTarget(this);
     }
 
-    public override void OnPlayerEnteredRoom(Player newPlayer)
+    /*public override void OnPlayerEnteredRoom(Player newPlayer)
     {
-        Debug.Log("joined!");
-
-        string name = "Передал данные";
-        
-        SendData(Encoding.ASCII.GetBytes(name), SendOptions.SendReliable);
-    }
+    SendData(Encoding.ASCII.GetBytes(name), SendOptions.SendReliable);
+    }*/
 
     public void SendData(byte[] data, SendOptions sendoptions, RaiseEventOptions raiseEventOptions = null)
     {
         PhotonNetwork.RaiseEvent(eventID, data, raiseEventOptions, sendoptions);
+    }
+
+    public void SendMessage()
+    {
+        if (Name.text == "" ||
+            Company.text == "" ||
+            Email.text == "")
+            return;
+
+        string text = $"{Name.text};{Company.text};{Email.text}";
+
+        start.interactable = false;
+        
+        SendData(Encoding.ASCII.GetBytes(text), SendOptions.SendReliable);
     }
 
     public void OnEvent(EventData photonEvent)
@@ -69,7 +86,26 @@ public class ServerLogic : MonoBehaviourPunCallbacks, IOnEventCallback
 
         var data = (byte[]) photonEvent.CustomData;
 
-        OnReceived?.Invoke(data);
+        string text = Encoding.ASCII.GetString(data);
+
+        Debug.LogError(text);
+
+        if (text == "1")
+        {
+            Name.text = "";
+            Company.text = "";
+            Email.text = "";
+
+            start.interactable = true;
+        }
+        else StartCoroutine(WaitMessage());
+    }
+    
+    private IEnumerator WaitMessage()
+    {
+        yield return new WaitForSeconds(2f);
+
+        SendMessage();
     }
     
     #endregion

@@ -1,69 +1,107 @@
 using System;
 using System.Collections;
-using System.Text;
-using ExitGames.Client.Photon;
+using System.Collections.Generic;
+using System.Net;
 using UnityEngine;
-using Photon.Pun;
-using Photon.Realtime;
+using TMPro;
 using UnityEngine.UI;
+using WebSocketSharp;
 
-public class ServerLogic : MonoBehaviourPunCallbacks, IOnEventCallback
+public class ServerLogic : MonoBehaviour
 {
-    public bool IsGame;
-
+    public TMP_InputField IpnutIP;
     public InputField Name;
     public InputField Company;
     public InputField Email;
+    public Text NameH;
+    public Text CompanyH;
+    public Text EmailH;
     public Button start;
-    
-    private const byte eventID = 42;
+    public GameObject IPField;
 
-    public event Action<byte[]> OnReceived;
-    
+    private Dictionary<InputField, Text> GUI;
+    private WebSocket webSocket;
+
     void Start()
     {
-        PhotonNetwork.ConnectUsingSettings();
+        GUI = new Dictionary<InputField, Text>
+        {
+            {Name, NameH},
+            {Company, CompanyH},
+            {Email, EmailH}
+        };
     }
 
-    #region Pun Callbacks
-
-    public override void OnDisconnected(DisconnectCause cause)
+    public void InitConnect()
     {
-        Debug.LogWarning($"Failed to connect: {cause}");
+        IPAddress correctIP;
+
+        if (!IPAddress.TryParse(IpnutIP.text, out correctIP))
+            return;
+
+        TryConnectToServer(correctIP);
     }
     
-    public override void OnConnectedToMaster()
+    private void TryConnectToServer(IPAddress ip)
     {
-        Debug.Log("Connected to photon!");
+        webSocket = new WebSocket($"ws://{ip}:4649/Echo");
+
+        /*webSocket.OnOpen += (sender, e) => { UnityMainThreadDispatcher.Instance().Enqueue(() => Debug.LogError($"open {e}")); };
+
+        webSocket.OnMessage += (sender, e) => { UnityMainThreadDispatcher.Instance().Enqueue(() => Debug.LogError($"data {e.Data}")); };
+
+        webSocket.OnError += (sender, e) => { UnityMainThreadDispatcher.Instance().Enqueue(() => Debug.LogError(e.Message)); };
+
+        webSocket.OnClose += (sender, e) => { UnityMainThreadDispatcher.Instance().Enqueue(() => Debug.LogWarning(e.Code)); };*/
         
-        if (IsGame)
-            PhotonNetwork.JoinRandomRoom();
+        webSocket.OnOpen += WebSocketOnOnOpen;
+
+        webSocket.OnMessage += OnEvent;
+
+        webSocket.OnError += WebSocketOnOnError;
+
+        webSocket.OnClose += WebSocketOnOnClose;
+        
+        webSocket.Connect();
+    }
+
+    private void OnDestroy()
+    {
+        if (webSocket == null)
+            return;
+        
+        webSocket.Close();
+
+        webSocket.OnOpen -= WebSocketOnOnOpen;
+
+        webSocket.OnMessage -= OnEvent;
+
+        webSocket.OnError -= WebSocketOnOnError;
+
+        webSocket.OnClose -= WebSocketOnOnClose;
+    }
+
+    private void WebSocketOnOnClose(object sender, CloseEventArgs e)
+    {
+        UnityMainThreadDispatcher.Instance().Enqueue(() => IPField.SetActive(true));
+    }
+
+    private void WebSocketOnOnError(object sender, ErrorEventArgs e)
+    {
+        UnityMainThreadDispatcher.Instance().Enqueue(() => Debug.LogError(e.Message));
+    }
+
+    private void WebSocketOnOnOpen(object sender, EventArgs e)
+    {
+        UnityMainThreadDispatcher.Instance().Enqueue(() => IPField.SetActive(false));
+    }
+
+    public void PlaceHolder(InputField field)
+    {
+        if (field.text == "")
+            GUI[field].enabled = true;
         else
-            PhotonNetwork.CreateRoom("ChatRoom");
-    }
-    
-    public override void OnJoinRandomFailed(short returnCode, string message)
-    {
-        Debug.LogError(message);
-        
-        PhotonNetwork.CreateRoom("My First Room");
-    }
-
-    public override void OnJoinedRoom()
-    {
-        Debug.Log($"{PhotonNetwork.CurrentRoom.Name} joined!");
-        
-        PhotonNetwork.AddCallbackTarget(this);
-    }
-
-    /*public override void OnPlayerEnteredRoom(Player newPlayer)
-    {
-    SendData(Encoding.ASCII.GetBytes(name), SendOptions.SendReliable);
-    }*/
-
-    public void SendData(byte[] data, SendOptions sendoptions, RaiseEventOptions raiseEventOptions = null)
-    {
-        PhotonNetwork.RaiseEvent(eventID, data, raiseEventOptions, sendoptions);
+            GUI[field].enabled = false;
     }
 
     public void SendMessage()
@@ -76,37 +114,30 @@ public class ServerLogic : MonoBehaviourPunCallbacks, IOnEventCallback
         string text = $"{Name.text};{Company.text};{Email.text}";
 
         start.interactable = false;
-        
-        SendData(Encoding.ASCII.GetBytes(text), SendOptions.SendReliable);
+        webSocket.Send(text);
+
     }
 
-    public void OnEvent(EventData photonEvent)
+    public void OnEvent(object sender, MessageEventArgs e)
     {
-        if(photonEvent.Code != eventID) return;
-
-        var data = (byte[]) photonEvent.CustomData;
-
-        string text = Encoding.ASCII.GetString(data);
-
-        Debug.LogError(text);
-
-        if (text == "1")
+        UnityMainThreadDispatcher.Instance().Enqueue(() =>
         {
-            Name.text = "";
-            Company.text = "";
-            Email.text = "";
+            if (e.Data == "1")
+            {
+                Name.text = "";
+                Company.text = "";
+                Email.text = "";
 
-            start.interactable = true;
-        }
-        else StartCoroutine(WaitMessage());
+                start.interactable = true;
+            }
+            else StartCoroutine(WaitMessage());
+        });
     }
-    
+
     private IEnumerator WaitMessage()
     {
         yield return new WaitForSeconds(2f);
 
         SendMessage();
     }
-    
-    #endregion
 }

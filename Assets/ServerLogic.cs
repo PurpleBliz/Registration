@@ -26,7 +26,9 @@ public class ServerLogic : MonoBehaviour
     private Dictionary<InputField, Text> GUI;
     private WebSocket webSocket;
     private IPAddress correctIP;
-
+    
+    private bool TryConnectB => TryConnect.isOn;
+    
     private int Port = 4649;
     
     void Start()
@@ -58,8 +60,6 @@ public class ServerLogic : MonoBehaviour
         InfoPanel.enabled = true;
         InfoPanel.text = $"Attempt to connect to the [{ip}]...";
 
-        var connectionString = $"ws://{ip}:{Port}/Echo";
-        
         using(TcpClient tcpClient = new TcpClient())
         {
             try
@@ -67,7 +67,7 @@ public class ServerLogic : MonoBehaviour
                 tcpClient.Connect(ip, Port);
                 
                 if (SaveIP.isOn)
-                    SaveURL(connectionString);
+                    SaveURL(ip.ToString());
             }
             catch (Exception)
             {
@@ -81,7 +81,7 @@ public class ServerLogic : MonoBehaviour
             }
         }
         
-        webSocket = new WebSocket(connectionString);
+        webSocket = new WebSocket($"ws://{ip}:{Port}/Echo");
         
         webSocket.OnOpen += WebSocketOnOnOpen;
 
@@ -152,7 +152,7 @@ public class ServerLogic : MonoBehaviour
             if (e.Code == 1005)
                 StartCoroutine(Reconnect());
 
-            IPField.SetActive(true);
+            if(!TryConnectB) IPField.SetActive(true);
         });
     }
 
@@ -182,15 +182,12 @@ public class ServerLogic : MonoBehaviour
             return;
 
         string text = $"{Name.text};{Company.text};{Email.text}";
-
-        start.interactable = false;
+        
         webSocket.Send(text);
     }
 
     public void OnEvent(object sender, MessageEventArgs e)
     {
-        Debug.Log(e.Data);
-        
         UnityMainThreadDispatcher.Instance().Enqueue(() =>
         {
             if (e.Data == "1")
@@ -201,7 +198,6 @@ public class ServerLogic : MonoBehaviour
 
                 start.interactable = true;
             }
-            else StartCoroutine(WaitMessage());
         });
     }
 

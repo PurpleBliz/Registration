@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Net;
+using System.Net.Sockets;
 using UnityEngine;
 using TMPro;
 using UnityEngine.UI;
@@ -18,12 +19,22 @@ public class ServerLogic : MonoBehaviour
     public Text EmailH;
     public Button start;
     public GameObject IPField;
+    public TextMeshProUGUI InfoPanel;
+    public Toggle TryConnect;
+    public Toggle SaveIP;
 
     private Dictionary<InputField, Text> GUI;
     private WebSocket webSocket;
+    private IPAddress correctIP;
 
+    private int Port = 4649;
+    
     void Start()
     {
+        InfoPanel.enabled = false;
+
+        IpnutIP.text = LoadURL();
+        
         GUI = new Dictionary<InputField, Text>
         {
             {Name, NameH},
@@ -34,8 +45,8 @@ public class ServerLogic : MonoBehaviour
 
     public void InitConnect()
     {
-        IPAddress correctIP;
-
+        StopAllCoroutines();
+        
         if (!IPAddress.TryParse(IpnutIP.text, out correctIP))
             return;
 
@@ -44,15 +55,33 @@ public class ServerLogic : MonoBehaviour
     
     private void TryConnectToServer(IPAddress ip)
     {
-        webSocket = new WebSocket($"ws://{ip}:4649/Echo");
+        InfoPanel.enabled = true;
+        InfoPanel.text = $"Attempt to connect to the [{ip}]...";
 
-        /*webSocket.OnOpen += (sender, e) => { UnityMainThreadDispatcher.Instance().Enqueue(() => Debug.LogError($"open {e}")); };
+        var connectionString = $"ws://{ip}:{Port}/Echo";
+        
+        using(TcpClient tcpClient = new TcpClient())
+        {
+            try
+            {
+                tcpClient.Connect(ip, Port);
+                
+                if (SaveIP.isOn)
+                    SaveURL(connectionString);
+            }
+            catch (Exception)
+            {
+                if (TryConnect.isOn)
+                    StartCoroutine(Reconnect());
+                else
+                    InfoPanel.text =
+                        "Critical connection problem, please check your internet connection on both devices and try again.";
 
-        webSocket.OnMessage += (sender, e) => { UnityMainThreadDispatcher.Instance().Enqueue(() => Debug.LogError($"data {e.Data}")); };
-
-        webSocket.OnError += (sender, e) => { UnityMainThreadDispatcher.Instance().Enqueue(() => Debug.LogError(e.Message)); };
-
-        webSocket.OnClose += (sender, e) => { UnityMainThreadDispatcher.Instance().Enqueue(() => Debug.LogWarning(e.Code)); };*/
+                return;
+            }
+        }
+        
+        webSocket = new WebSocket(connectionString);
         
         webSocket.OnOpen += WebSocketOnOnOpen;
 
@@ -63,8 +92,43 @@ public class ServerLogic : MonoBehaviour
         webSocket.OnClose += WebSocketOnOnClose;
         
         webSocket.Connect();
+
+        if (webSocket.IsAlive)
+        {
+            InfoPanel.text = $"Connected successfully !";
+            
+            StartCoroutine(CloseInfo());
+        }
+        else StartCoroutine(Reconnect());
     }
 
+    private void SaveURL(string URL)
+    {
+        PlayerPrefs.SetString("URL", URL);
+    }
+
+    private string LoadURL()
+    {
+        if (PlayerPrefs.HasKey("URL"))
+            return PlayerPrefs.GetString("URL");
+
+        return "";
+    }
+
+    private IEnumerator CloseInfo()
+    {
+        yield return new WaitForSeconds(2f);
+
+        InfoPanel.enabled = !InfoPanel.enabled;
+    }
+    
+    private IEnumerator Reconnect()
+    {
+        yield return new WaitForSeconds(2f);
+
+        TryConnectToServer(correctIP);
+    }
+    
     private void OnDestroy()
     {
         if (webSocket == null)
@@ -83,7 +147,13 @@ public class ServerLogic : MonoBehaviour
 
     private void WebSocketOnOnClose(object sender, CloseEventArgs e)
     {
-        UnityMainThreadDispatcher.Instance().Enqueue(() => IPField.SetActive(true));
+        UnityMainThreadDispatcher.Instance().Enqueue(() =>
+        {
+            if (e.Code == 1005)
+                StartCoroutine(Reconnect());
+
+            IPField.SetActive(true);
+        });
     }
 
     private void WebSocketOnOnError(object sender, ErrorEventArgs e)
@@ -115,11 +185,12 @@ public class ServerLogic : MonoBehaviour
 
         start.interactable = false;
         webSocket.Send(text);
-
     }
 
     public void OnEvent(object sender, MessageEventArgs e)
     {
+        Debug.Log(e.Data);
+        
         UnityMainThreadDispatcher.Instance().Enqueue(() =>
         {
             if (e.Data == "1")

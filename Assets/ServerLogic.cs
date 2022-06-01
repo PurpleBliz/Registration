@@ -22,7 +22,8 @@ public class ServerLogic : MonoBehaviour
     public TextMeshProUGUI InfoPanel;
     public Toggle TryConnect;
     public Toggle SaveIP;
-
+    public Toggle Policy;
+    
     private Dictionary<InputField, Text> GUI;
     private WebSocket webSocket;
     private IPAddress correctIP;
@@ -48,13 +49,13 @@ public class ServerLogic : MonoBehaviour
     public void InitConnect()
     {
         StopAllCoroutines();
-        
+
         if (!IPAddress.TryParse(IpnutIP.text, out correctIP))
             return;
 
         TryConnectToServer(correctIP);
     }
-    
+
     private void TryConnectToServer(IPAddress ip)
     {
         InfoPanel.enabled = true;
@@ -176,6 +177,9 @@ public class ServerLogic : MonoBehaviour
 
     public void SendMessage()
     {
+        if (!Policy.isOn)
+            return;
+        
         if (Name.text == "" ||
             Company.text == "" ||
             Email.text == "")
